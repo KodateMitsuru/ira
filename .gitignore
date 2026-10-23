@@ -1,0 +1,8 @@
+build/
+build-*/
+!vendor/
+.scratch/
+
+# agent session artifacts, never part of the tree
+.pi/
+.jev-fabric-native/
