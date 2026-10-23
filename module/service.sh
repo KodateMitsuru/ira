@@ -20,7 +20,7 @@ mkdir -p "$MODDIR/state"
 [ -x "$MODDIR/ira-daemon" ] || exit 0
 
 start() {
-	"$MODDIR/ira-daemon" >>"$LOG" 2>&1 < /dev/null &
+	"$MODDIR/start-daemon.sh" >>"$LOG" 2>&1 < /dev/null &
 }
 
 # post-fs-data owns the initial start. Once this late-start script sees that process, it stays

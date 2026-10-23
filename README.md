@@ -46,6 +46,9 @@ the same push/install flow and does not restart the device or switch USB setting
 thread enters a private mount namespace; services retain init's live storage view. Shell and
 other services execute in separate root/shell backends with platform minijail credentials.
 The session shell is patched mksh with a socket-based terminal and a built-in su client.
+At daemon startup the KSU `adb_root` feature selects the default root/shell service mode;
+`adb root` and `adb unroot` override it for subsequent services. See
+[root defaults and package-install diagnostics](docs/adbroot-install.md).
 
 The supervisor restarts only after an explicit descriptor-change handoff. It leaves an unexpected
 crash down. Runtime logs and recovery markers are under `/data/adb/modules/ira/state/`.

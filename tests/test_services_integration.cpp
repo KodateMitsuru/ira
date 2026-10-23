@@ -67,6 +67,15 @@ static std::string shell(const std::string& command, int expected_exit = 0) {
     close(fd);
     return result;
 }
+static void select_root_service(bool root) {
+    atransport frontend(kTransportUsb, kCsOffline);
+    unique_fd response = service_to_fd(root ? "root:" : "unroot:", &frontend);
+    expect(response >= 0, "explicit root-mode service opens in the frontend");
+    expect(line(response.get()) == (root ? "adbd is now running as root" : "adbd is now running as non root"),
+           "explicit root-mode command finishes without a USB restart promise");
+    expect(ira_root_mode() == root, "explicit adb command overrides the frontend service default");
+}
+
 static void sync_write(const std::string& path, bool allowed) {
     int fd = ira_service_request(IraServiceOperation::Open, "sync:");
     expect(fd >= 0, "production sync service opens");
@@ -122,7 +131,7 @@ int main(int argc, char** argv) {
     expect(argc == 2 && geteuid() == 0, "mapped-root integration fixture supplied");
     expect(ira_platform_init() == 0 && ira_service_backend_init() == 0, "production frontend initializes");
     std::string path = std::string(argv[1]) + "/root-only";
-    ira_root_set(true);
+    select_root_service(true);
     expect(shell("id -u") == "0\n", "root shell uid matches service identity");
     expect(shell("printf stdout; printf stderr >&2; exit 37", 37) == "stdout", "shell stdout separate from stderr and exit code");
     sync_write(path, true);
@@ -144,7 +153,7 @@ int main(int argc, char** argv) {
     expect(cmsg && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS, "raw path preserves SCM_RIGHTS for abb");
     int passed; memcpy(&passed, CMSG_DATA(cmsg), sizeof(passed)); close(passed); close(raw);
     cancelled(true); cancelled(false);
-    ira_root_set(false);
+    select_root_service(false);
     expect(shell("id -u") == "2000\n", "nonroot shell uid matches service identity");
     expect(ira_service_request(IraServiceOperation::Open, "dev:" + path) < 0, "nonroot dev service cannot open private file");
     sync_write(path + "-denied", false);
@@ -165,7 +174,7 @@ int main(int argc, char** argv) {
     expect(exact(forwarded, forwarded_data, 4) && memcmp(forwarded_data, "pong", 4) == 0, "forward receives exact response");
     close(accepted); close(forwarded); close(listener);
     cancelled(true); cancelled(false);
-    ira_root_set(true);
+    select_root_service(true);
     expect(shell("id -u") == "0\n" && geteuid() == 0, "backend switching leaves frontend privileged");
     unlink(path.c_str());
     printf("PASS: %u complete production-service integration checks\n", checks);

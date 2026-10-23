@@ -128,6 +128,14 @@ int main(int argc, char** argv) {
         if (strcmp(argv[2], "root") != 0 && strcmp(argv[2], "shell") != 0) return 126;
         return ira_service_backend_main(strcmp(argv[2], "root") == 0);
     }
+    if (argc == 3 && strcmp(argv[1], "--ira-root-default") == 0 &&
+        (strcmp(argv[2], "root") == 0 || strcmp(argv[2], "shell") == 0)) {
+        ira_root_set(strcmp(argv[2], "root") == 0);
+    } else if (argc != 1) {
+        fprintf(stderr, "usage: ira-daemon [--ira-root-default root|shell]\n");
+        return 2;
+    }
+    fprintf(stderr, "ira: initial service mode=%s\n", ira_root_mode() ? "root" : "shell");
 #if defined(__ANDROID__) && !defined(IRA_VM)
     /* init owns the mount tree with vold/FUSE storage. Module launchers can run
      * in a private namespace, so match adbd before creating threads. */

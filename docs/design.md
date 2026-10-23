@@ -30,7 +30,9 @@ threads start. Required platform API failures refuse startup.
 All shell modes execute the same preopened mksh inode. Its `shell_exec` label supplies the normal
 `adbd → shell` transition; the module grants `nosuid_transition` because it lives under `/data`.
 The shell implements terminal editing over sockets and a built-in su client; no PTY is allocated.
-Root/unroot choose credentials for later service opens and relink the transport without bouncing USB.
+KSU's current `adb_root` feature determines the default credentials at frontend start.
+Root/unroot choose credentials for later service opens without bouncing USB or altering
+credentials of existing commands. Each replacement frontend reads the KSU default again.
 
 The service set includes shell/exec, sync, abb and explicit forwarding. Wireless pairing, mDNS,
 TCP ADB, framebuffer and app tracking are not started or advertised. See

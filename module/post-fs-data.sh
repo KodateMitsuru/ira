@@ -33,7 +33,7 @@ fi
 rm -f "$MARKER" "$MODDIR/state/revoke.resume" "$MODDIR/state/revoke.resume.new"
 
 # Its stdout and stderr go to the log; the daemon itself never returns.
-"$MODDIR/ira-daemon" >>"$LOG" 2>&1 < /dev/null &
+"$MODDIR/start-daemon.sh" >>"$LOG" 2>&1 < /dev/null &
 pid=$!
 echo "[post-fs-data] ira-daemon pid $pid" >>"$LOG"
 

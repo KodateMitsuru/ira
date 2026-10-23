@@ -19,6 +19,11 @@ the service; it never continues with frontend/root credentials. The child and ra
 adapters reset ignored daemon signals and preserve upstream hangup semantics without a PTY.
 The raw watcher does not relay data, so both binary bytes and abb's ancillary fd passing remain intact.
 
+Both module start paths use `start-daemon.sh`: a bounded `ksud feature get adb_root` query
+selects the initial mode, with shell as the fallback. Explicit root/unroot commands then own
+the frontend mode until the next daemon start. Backend invocations take their identity directly
+from their `--ira-services` argument and do not re-read KSU.
+
 Root/unroot select the backend for subsequent service opens. They do not bounce USB, change system
 ADB properties, or secretly mutate an already-running command's credentials. This preserves IRA's
 explicit per-session root design while applying it consistently to sync, dev and forwarding too.

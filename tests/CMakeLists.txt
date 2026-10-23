@@ -103,6 +103,8 @@ add_custom_target(java-tests ALL DEPENDS "${_java_dir}/.stamp")
 foreach(_class AdbResponseThreadBinding AdbRevocationObserver AdbPromptRouter AdbRevocationClient AdbAuthWriter AdbRevocationCommand)
   ira_run(java_${_class} ${Java_JAVA_EXECUTABLE} -cp "${_java_dir}/classes" ira.fw.${_class}Test "${_java_dir}/framework")
 endforeach()
+ira_run(root_default ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_root_default.py"
+  "${IRA_TEST_WORK}/root-default" $<TARGET_FILE:ira-daemon>)
 ira_run(installer ${CMAKE_COMMAND} -E env "IRA_TEST_WORK=${IRA_TEST_WORK}/installer"
   ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test_installer_policy.py")
 get_filename_component(_android_bin "${IRA_SHELL}" DIRECTORY)
