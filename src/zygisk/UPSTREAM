@@ -1,0 +1,5 @@
+zygisk_next_api.h  Dr-TSNG/ZygiskNext, zygisk_next_api.h (API v4)
+                   fetched from github.com/Dr-TSNG/ZygiskNext, unmodified. See NOTICE.
+
+A module written against this API exports `struct ZygiskNextModule zn_module` and receives
+the ZygiskNextAPI in onModuleLoaded(): inline hooking, symbol resolution, companion sockets.
