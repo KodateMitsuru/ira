@@ -11,7 +11,9 @@ libraries. See the repository `docs/build.md` for commands.
 
 Authentication uses BoringSSL RAND_bytes, EVP_DecodeBase64 and RSA_verify, with AOSP
 the decoder in `src/auth` for the Android public-key format and the directly trimmed
-libadbd_auth core for USB key/prompt lifecycle. ADB signs the 20-byte token as a SHA-1 digest; it does not hash that token again.
+libadbd_auth core for USB key/prompt lifecycle. ADB signs the 20-byte token as a SHA-1 digest;
+RSA_verify checks its PKCS#1 digest prefix without hashing the token. The vendored subset therefore
+contains no SHA-1/SHA-2 implementation. Its random generator still needs upstream AES-CTR DRBG.
 There are no local SHA/RSA algorithms or placeholder OpenSSL headers.
 
 Android logging links the NDK liblog; AdbLogger selects stderr. Host logging uses the adapted

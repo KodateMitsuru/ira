@@ -7,7 +7,7 @@ explicitly; imported files keep their original copyright and licence text.
 | Source | Retained upstream terms | IRA treatment |
 | --- | --- | --- |
 | `src/adb`, `src/base`, `src/auth` | Apache-2.0 | Selected sources are copied into the relevant targets. Local contributions are AGPL; upstream notices remain. |
-| `vendor/boringssl` | Apache-2.0 and retained third-party notices | Required crypto sources only. Build metadata and local selection changes are AGPL; algorithm/source notices are preserved. |
+| `vendor/boringssl` | Apache-2.0 and retained third-party notices | Authorization dependency closure only; upstream internal sources compile separately without algorithm rewrites. Build metadata and local selection changes are AGPL; upstream notices are preserved. |
 | `src/mksh` | MirOS/BSD-like and original per-file terms | Terminal changes and build integration are AGPL. Original notices stay in source and NOTICE. |
 | Magisk-derived su portions | GPL-3.0-only | Original GPL portions remain GPL. IRA additions are AGPL; the combined work uses the section 13 permissions in GPLv3 and AGPLv3. |
 | `src/zygisk/api/zygisk.hpp` | ISC-style permission in the header | Unchanged API header; no replacement licence. |

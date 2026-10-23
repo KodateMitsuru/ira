@@ -23,7 +23,9 @@ src/auth           USB-only subset of AOSP frameworks/native/libs/adbd_auth and
 vendor/boringssl   BoringSSL crypto subset; fixed revision and changes in README.ira.md.
                    Apache-2.0 plus original third-party terms in LICENSE and retained
                    source notices. CMake source lists belong to IRA (AGPL-3.0-or-later).
-                   Linux ARM64/x86_64 inputs only; SSL/PKI/tools/tests are omitted.
+                   Auth-only Linux ARM64/x86_64 inputs: RSA/BIGNUM, Base64, RAND and
+                   its AES-CTR DRBG. SHA implementations, EC, X509, ASN.1/PEM, SSL,
+                   tools and tests are omitted; upstream algorithms are not rewritten.
 
 src/mksh           MirBSD Korn Shell R59c, MirOS/BSD-like licences in NOTICE and source.
                    IRA terminal changes and build integration are AGPL-3.0-or-later.

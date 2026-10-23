@@ -31,8 +31,12 @@ are owned by `src/zygisk/CMakeLists.txt`; auth/base are built in their respectiv
 There is no shell configure/build script or separate compiler wrapper.
 
 Only the BoringSSL crypto subset remains under `vendor/boringssl`; its own `CMakeLists.txt`
-and explicit source list build the `crypto` target directly. SSL/PKI/tool/test sources and
-unused headers are removed. `src/auth` owns the trimmed AOSP authorization core and Android
+and explicit source list build an authorization-only `crypto` target directly. BCM internal
+source units compile separately with function/data sections and linker garbage collection;
+the source list is the union of Android ARM64 and Linux x86_64 link dependencies. RSA/BIGNUM,
+Base64, RAND and its AES-CTR DRBG remain. SHA implementations, EC, X509, ASN.1/PEM and
+unused headers are removed. This target supplies only the APIs used by IRA, rather than a
+general-purpose libcrypto. `src/auth` owns the trimmed AOSP authorization core and Android
 public-key decoder. NDK libc/libdl/liblog/libc++ and Android/JNI headers are used directly;
 NDK r30 provides neither public OpenSSL headers nor `libcrypto`, so crypto remains vendored.
 The OpenSSL CLI generates independent host test fixtures and is not linked into the payload.
@@ -55,7 +59,8 @@ needed; exported source uses `module/module.prop` as a fallback.
 ## Validation
 
 `check` builds the Android payload and host tests, then runs CTest. Tests cover wire-format
-crypto, upstream auth lifecycle, FunctionFS descriptors and recovery, backend credentials,
+crypto (including token RNG initialization and fork separation), auth lifecycle, FunctionFS
+descriptors and recovery, backend credentials,
 service integration, framework routing, hook ABI, installer policy and absence of PTY imports.
 The packaged ARM64 mksh's signal behavior runs through QEMU. Fixtures and generated Java
 classes remain in the binary directory. Run a focused test with:
