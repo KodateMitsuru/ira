@@ -29,6 +29,9 @@
 #include <pthread.h>
 #include <sched.h>
 #include <signal.h>
+#include <linux/aio_abi.h>
+#include <sys/eventfd.h>
+#include <sys/syscall.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1279,6 +1282,243 @@ void ira_ffs_pump_register(int dir) {
 
     g_pump[dir] = pthread_self();
     g_pump_known[dir] = true;
+}
+
+/* ---- pipelined bulk I/O ---------------------------------------------------
+ *
+ * The synchronous ep_io() below performs one transfer and waits for the host to
+ * take it.  A 16 KiB chunk therefore costs a full round trip, and the link
+ * moves one chunk per round trip no matter how fast the controller is.  These
+ * wrappers submit up to IRA_AIO_DEPTH requests through the kernel's aio
+ * interface and report completions by tag: the same shape AOSP's own ffs
+ * transport uses, and the reason real adbd does not slow down like that.
+ *
+ * Every submitted request is counted in g_in_flight exactly like a blocking
+ * transfer, so quiesce_pumps() still refuses to let a re-arm close an endpoint
+ * with kernel I/O outstanding.  A request that outlives its generation reports
+ * EAGAIN and its bytes are dropped by the pump.
+ */
+namespace {
+struct aio_slot {
+    struct iocb cb;
+    unsigned long tag;
+    unsigned gen;
+    bool busy;
+};
+struct aio_state {
+    aio_context_t ctx;
+    int efd;
+    unsigned depth;
+    aio_slot slots[IRA_AIO_DEPTH];
+};
+} // namespace
+
+static aio_state g_aio[kDirs];
+
+int ira_ffs_rearming(void) {
+    std::lock_guard<std::mutex> lk(g_m);
+    return g_rearming ? 1 : 0;
+}
+
+int ira_ffs_aio_open(int dir, unsigned depth) {
+    if (dir < 0 || dir >= kDirs) {
+        errno = EINVAL;
+        return -1;
+    }
+    aio_state &a = g_aio[dir];
+
+    if (a.ctx != 0)
+        return 0;
+    if (depth == 0 || depth > IRA_AIO_DEPTH)
+        depth = IRA_AIO_DEPTH;
+
+    aio_context_t ctx = 0;
+
+    /* Older kernels or a seccomp filter may not allow aio at all; the caller
+     * then keeps using the single-transfer path. */
+    if (syscall(__NR_io_setup, depth * 2, &ctx) != 0)
+        return -1;
+    int efd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+
+    if (efd < 0) {
+        int err = errno;
+
+        syscall(__NR_io_destroy, ctx);
+        errno = err;
+        return -1;
+    }
+    memset(a.slots, 0, sizeof(a.slots));
+    a.ctx = ctx;
+    a.efd = efd;
+    a.depth = depth;
+    return 0;
+}
+
+int ira_ffs_aio_event_fd(int dir) {
+    if (dir < 0 || dir >= kDirs)
+        return -1;
+    return g_aio[dir].efd;
+}
+
+int ira_ffs_aio_submit(int dir, const void *buf, unsigned long len, unsigned long tag,
+                       unsigned session) {
+    aio_state &a = g_aio[dir];
+
+    if (a.ctx == 0) {
+        errno = EAGAIN;
+        return -1;
+    }
+    aio_slot *slot = nullptr;
+
+    for (unsigned i = 0; i < a.depth; i++) {
+        if (!a.slots[i].busy) {
+            slot = &a.slots[i];
+            break;
+        }
+    }
+    if (slot == nullptr) {
+        errno = EBUSY;
+        return -1;
+    }
+
+    int fd;
+    unsigned gen;
+
+    {
+        std::lock_guard<std::mutex> lk(g_m);
+
+        if (g_rearming || !g_enabled.load() || g_ep[dir] < 0 || session != g_gen) {
+            errno = EAGAIN;
+            return -1;
+        }
+        fd = g_ep[dir];
+        gen = g_gen;
+        g_in_flight[dir]++;
+    }
+
+    memset(&slot->cb, 0, sizeof(slot->cb));
+    slot->cb.aio_data = tag;
+    slot->cb.aio_lio_opcode = (uint16_t)(dir == kOut ? IOCB_CMD_PREAD : IOCB_CMD_PWRITE);
+    slot->cb.aio_fildes = (uint32_t)fd;
+    slot->cb.aio_buf = (uint64_t)(uintptr_t)buf;
+    slot->cb.aio_nbytes = len;
+    slot->cb.aio_offset = 0;
+    slot->cb.aio_flags = IOCB_FLAG_RESFD;
+    slot->cb.aio_resfd = (uint32_t)a.efd;
+    slot->tag = tag;
+    slot->gen = gen;
+    slot->busy = true;
+
+    struct iocb *cb = &slot->cb;
+
+    if (syscall(__NR_io_submit, a.ctx, 1L, &cb) != 1) {
+        int err = errno ? errno : EIO;
+
+        slot->busy = false;
+        std::lock_guard<std::mutex> lk(g_m);
+
+        if (g_in_flight[dir] > 0 && --g_in_flight[dir] == 0)
+            g_cv.notify_all();
+        errno = err;
+        return -1;
+    }
+    return 0;
+}
+
+int ira_ffs_aio_reap(int dir, struct ira_aio_done *out, int max, int timeout_ms) {
+    aio_state &a = g_aio[dir];
+
+    if (a.ctx == 0 || out == nullptr) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (max <= 0 || max > (int)IRA_AIO_DEPTH)
+        max = (int)IRA_AIO_DEPTH;
+
+    struct io_event events[IRA_AIO_DEPTH];
+    struct timespec ts;
+    struct timespec *tsp = nullptr;
+
+    if (timeout_ms >= 0) {
+        ts.tv_sec = timeout_ms / 1000;
+        ts.tv_nsec = (long)(timeout_ms % 1000) * 1000000L;
+        tsp = &ts;
+    }
+    long n = syscall(__NR_io_getevents, a.ctx, 0L, (long)max, events, tsp);
+
+    if (n < 0) {
+        errno = (int)-n;
+        return -1;
+    }
+    for (long i = 0; i < n; i++) {
+        aio_slot *slot = nullptr;
+
+        for (unsigned j = 0; j < a.depth; j++) {
+            if (a.slots[j].busy && (uint64_t)(uintptr_t)&a.slots[j].cb == events[i].obj) {
+                slot = &a.slots[j];
+                break;
+            }
+        }
+
+        long result = (long)events[i].res;
+        int error = 0;
+        bool stale = false;
+
+        if (result < 0) {
+            error = (int)-result;
+            result = -1;
+        }
+        {
+            std::lock_guard<std::mutex> lk(g_m);
+
+            if (slot != nullptr) {
+                stale = g_gen != slot->gen;
+                slot->busy = false;
+                if (g_in_flight[dir] > 0 && --g_in_flight[dir] == 0)
+                    g_cv.notify_all();
+            }
+        }
+        if (stale) {
+            /* The set was replaced while this transfer was in flight. */
+            result = -1;
+            error = EAGAIN;
+        }
+        out[i].tag = (unsigned long)events[i].data;
+        out[i].result = result;
+        out[i].error = error;
+    }
+    return (int)n;
+}
+
+void ira_ffs_aio_cancel(int dir) {
+    if (dir < 0 || dir >= kDirs)
+        return;
+    aio_state &a = g_aio[dir];
+
+    if (a.ctx == 0)
+        return;
+    for (unsigned i = 0; i < a.depth; i++) {
+        if (!a.slots[i].busy)
+            continue;
+        struct io_event ev;
+
+        syscall(__NR_io_cancel, a.ctx, &a.slots[i].cb, &ev);
+    }
+    /* Reap what came back so the in-flight count reaches zero and the re-arm can
+     * close the endpoints.  A request that completes instead of cancelling is
+     * reported by io_getevents. */
+    struct ira_aio_done done[IRA_AIO_DEPTH];
+
+    for (int i = 0; i < 50; i++) {
+        int n = ira_ffs_aio_reap(dir, done, (int)IRA_AIO_DEPTH, 10);
+
+        if (n > 0)
+            continue;
+        std::lock_guard<std::mutex> lk(g_m);
+
+        if (g_in_flight[dir] == 0)
+            return;
+    }
 }
 
 /* A bulk transfer for one pump. Every transfer is counted in flight while it is inside the kernel, so

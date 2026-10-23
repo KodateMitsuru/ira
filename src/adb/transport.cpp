@@ -472,20 +472,13 @@ void atransport::HandleError(const std::string& error) {
 
 void atransport::update_version(int version, size_t payload) {
     protocol_version = std::min(version, A_VERSION);
-    /* How much this side will put in one packet. The host may allow more, but a device that
-     * answers with a whole file in a single transfer keeps the host's own writes waiting behind
-     * that burst - on this emulated controller one such write came back ETIMEDOUT and adb tore
-     * the transport down, which looks exactly like the pull failing for no reason. Staying under
-     * a quarter of a megabyte per packet costs nothing and bounds that. */
-    /* One packet is read by the host as two transfers - the 24 byte header, then the whole
-     * payload - so every packet this side sends costs a pair of them, and a payload larger than
-     * the channel's own message size arrives as several. Sixteen kilobytes keeps a packet to
-     * exactly the two transfers the host is expecting, which is what a real adbd's packets look
-     * like on the wire. */
-    /* One packet is two transfers on the wire - header, then payload - and this is how large this
-     * side will make the second of them. It stays well inside what a host is prepared to read in
-     * one go, and every byte of it goes out as a single transfer, as it does from functionfs. */
-    max_payload = std::min(payload, (size_t)(16 * 1024));
+    /* How much this side puts in one packet. AOSP offers MAX_PAYLOAD here and
+     * leaves splitting to the transport, and so does this: ira_bridge breaks a
+     * payload into 16 KiB bulk requests, so a large packet is still many small
+     * USB transfers rather than one oversized request that a controller may
+     * refuse. The earlier 16 KiB cap made every packet pay the framing and
+     * round-trip cost of a whole packet for 16 KiB of data. */
+    max_payload = std::min(payload, (size_t)MAX_PAYLOAD);
 }
 
 int atransport::get_protocol_version() const {

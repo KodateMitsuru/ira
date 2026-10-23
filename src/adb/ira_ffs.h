@@ -46,6 +46,22 @@
  * device pump hands to ep1. */
 #define IRA_BULK_CHUNK 16384
 
+/* Asynchronous bulk I/O.  AOSP's own ffs transport keeps eight 16 KiB requests
+ * in flight per direction (daemon/usb.cpp: kUsbReadQueueDepth and
+ * kUsbWriteQueueDepth are both 8).  One blocking transfer at a time leaves the
+ * controller idle for a whole completion round trip between chunks, which is
+ * what caps this link at about one chunk per round trip. */
+#define IRA_AIO_DEPTH 8
+
+/* One completed bulk request.  tag is the cookie ira_ffs_aio_submit() was given;
+ * result is the byte count or -1, with error holding errno (EAGAIN marks a
+ * transfer that a re-arm invalidated, whose bytes must be dropped). */
+struct ira_aio_done {
+    unsigned long tag;
+    long result;
+    int error;
+};
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -107,6 +123,20 @@ unsigned ira_ffs_session_generation(void);
 long ira_ffs_read_out_session(void *buf, unsigned long len, unsigned session);
 
 long ira_ffs_write_in(const void *buf, unsigned long len);
+
+/* True while a descriptor set is being replaced: the pumps cancel what they
+ * still have in flight before the endpoints are closed under them. */
+int ira_ffs_rearming(void);
+
+/* Pipelined bulk I/O for one pump thread.  submit() and reap() must be called
+ * from the same thread; the request stays inside the kernel until it completes
+ * or is cancelled, and its buffer must not be touched until then. */
+int ira_ffs_aio_open(int dir, unsigned depth);
+int ira_ffs_aio_event_fd(int dir);
+int ira_ffs_aio_submit(int dir, const void *buf, unsigned long len, unsigned long tag,
+                       unsigned session);
+int ira_ffs_aio_reap(int dir, struct ira_aio_done *out, int max, int timeout_ms);
+void ira_ffs_aio_cancel(int dir);
 
 #ifdef __cplusplus
 }

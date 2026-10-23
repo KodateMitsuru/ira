@@ -29,7 +29,8 @@ request is not acknowledged before ep0 is ready.
 
 The re-arm sequence is:
 
-1. Pause new pump transfers, bump their generation and interrupt/wait for in-flight transfers.
+1. Pause new submissions, bump the generation, cancel the requests still inside the kernel
+   (`io_cancel` plus a bounded reap) and wait until the in-flight count is zero.
 2. Destroy the ep0 watcher, close bulk endpoints, then close ep0.
 3. Reopen ep0 and write descriptors/strings; reopen bulk endpoints for the ADB set.
 4. Publish the new endpoint generation and install the new ep0 watcher.
@@ -37,6 +38,25 @@ The re-arm sequence is:
 The watcher duplicates ep0 with `F_DUPFD_CLOEXEC`. Plain `dup()` leaks ep0 through service backend
 exec, pins the old FunctionFS state and prevents re-arm even after the frontend closes its fds.
 A fork/exec regression checks that the duplicate disappears in the child.
+
+## Pipelined bulk transfer
+
+A bulk endpoint moves one 16 KiB request per completion round trip if the pump waits for each one.
+Both pumps therefore keep `IRA_AIO_DEPTH` (8) requests in flight, the same queue depth AOSP's own
+ffs transport uses (`daemon/usb.cpp`: `kUsbReadQueueDepth` and `kUsbWriteQueueDepth`). Requests go
+through `io_submit`/`io_getevents` with an eventfd, are matched to buffers by tag, and are counted
+in the same in-flight accounting the re-arm path waits on, so a descriptor change cannot close an
+endpoint with kernel I/O outstanding.
+
+Packet payloads are limited by `MAX_PAYLOAD` (1 MiB), as in AOSP, rather than to one chunk. The
+wire framing does not change: the IN pump still writes the 24-byte header as its own transfer and
+splits the payload into 16 KiB requests, so the host keeps reading exactly the length its header
+announced, and no single USB request grows past what a controller may refuse.
+
+A request that outlives its session reports `EAGAIN` and its bytes are dropped. If the kernel
+refuses aio on the endpoints, both pumps fall back to the previous single-transfer path instead of
+failing the transport; `tests/test_ffs_aio.cpp` drives the queue itself (depth, tags, generation
+invalidation, backpressure, cancellation).
 
 ## Revocation reset and recovery
 

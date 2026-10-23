@@ -22,6 +22,11 @@ endforeach()
 file(MAKE_DIRECTORY "${IRA_TEST_WORK}/lifecycle")
 target_compile_definitions(test_ffs_lifecycle PRIVATE
   IRA_GADGET_DIR="${IRA_TEST_WORK}/lifecycle/gadget" IRA_STATE_DIR="${IRA_TEST_WORK}/lifecycle")
+ira_test(test_ffs_aio test_ffs_aio.cpp ${_fde} ${_names})
+file(MAKE_DIRECTORY "${IRA_TEST_WORK}/aio")
+target_compile_definitions(test_ffs_aio PRIVATE
+  IRA_GADGET_DIR="${IRA_TEST_WORK}/aio/gadget" IRA_STATE_DIR="${IRA_TEST_WORK}/aio")
+ira_run(ffs_aio $<TARGET_FILE:test_ffs_aio>)
 ira_test(test_ffs_namespace test_ffs_namespace.cpp ${_fde} ${_names})
 ira_run(ffs_namespace ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/run.py" namespace
   $<TARGET_FILE:test_ffs_namespace> "${IRA_TEST_WORK}/namespace")
