@@ -1,0 +1,6 @@
+id=ira
+name=ira
+version=0.1.0
+versionCode=1000
+author=
+description=ADB over USB through a private FunctionFS function: upstream adbd, no kernel module, no TCP listener, no property change.

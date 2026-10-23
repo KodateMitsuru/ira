@@ -1,0 +1,39 @@
+# This file is injected into init.rc by KernelSU (initrc/ in a module dir).
+#
+# It does one thing: make sure the FunctionFS function instance and its link exist BEFORE
+# anything binds the gadget to a UDC. configfs refuses to add a function link once
+# gi->composite.gadget_driver.udc_name is set (drivers/usb/gadget/configfs.c:473,
+# config_usb_cfg_link returns -EINVAL), and the vendor's own rc creates the gadget in
+# "on early-boot", which runs AFTER post-fs-data.
+#
+# Only the minimum is written here. Everything else of the gadget skeleton (idVendor, idProduct,
+# strings, config attributes, os_desc) is written later by the vendor rc, whose mkdir is idempotent:
+# init's do_mkdir() lstats first and accepts an existing directory, and a failing symlink is logged
+# and skipped. The framework's gadget HAL starts after early-boot, so it finds a complete gadget.
+#
+# The instance is functions/ffs.ira: configfs strips the "ffs." prefix and hands "ira" to
+# ffs_set_inst_name() (configfs.c:661 -> f_fs.c:3576), which is the name the daemon mounts
+# ("mount -t functionfs ira <instance dir>"). The daemon writes the descriptors and strings.
+#
+# The link is named "ira" on purpose: the HAL's unlinkFunctions() only removes entries whose name
+# contains "function", and the kernel only refuses a *duplicate of the same instance*, so our
+# functions/ffs.ira link neither collides with the HAL's functions/ffs.adb nor is ever removed by it.
+#
+# The name does not decide interface order. configfs appends every link to the configuration's
+# function list (config_usb_cfg_link: list_add_tail) and the composite binds that list in order
+# (configfs_composite_bind -> usb_add_function); the descriptor order is that list. Names are never
+# compared.
+#
+# Because the framework links its own functions/ffs.adb into this same configuration later, the
+# descriptor set the daemon writes cannot be decided here or at mount. It follows the link set and
+# is re-evaluated on every bind and on every link change (src/adbd/ira_ffs.cpp): with ffs.adb
+# absent the daemon presents the adb interface (ff/42/01, ep1+ep2), and with it present it presents
+# an inert ff/00/00 interface with no endpoints and leaves adb to the platform's function.
+
+on post-fs-data
+    mkdir /config/usb_gadget/g1 0755 root root
+    mkdir /config/usb_gadget/g1/functions 0755 root root
+    mkdir /config/usb_gadget/g1/configs 0755 root root
+    mkdir /config/usb_gadget/g1/configs/b.1 0755 root root
+    mkdir /config/usb_gadget/g1/functions/ffs.ira 0755 root root
+    symlink /config/usb_gadget/g1/functions/ffs.ira /config/usb_gadget/g1/configs/b.1/ira

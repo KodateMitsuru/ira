@@ -1,0 +1,5 @@
+# Where this module's library goes, for ZygiskNext: the process that owns configfs on this
+# platform is the USB gadget HAL, started by init (so it can be injected) and the only process that
+# decides when the gadget is bound.  One line per vendor spelling of the same service.
+name=android.hardware.usb.gadget-service lib/ira-zn.so
+name=android.hardware.usb.gadget-service.qti lib/ira-zn.so

@@ -1,0 +1,9 @@
+# Written in full by customize.sh at install time.
+#
+# Nothing is hardcoded here: the gadget HAL's domain and the root manager's domain are read from
+# the device during installation, and only rules whose source is a restricted domain are written -
+# the root domain is unrestricted, so rules from it would be dead weight.
+#
+# If either domain cannot be determined, the installer aborts instead of falling back to a name
+# from another device. A device whose installer did not rewrite this file has no IRA policy, and
+# the HAL hook is denied: this is a placeholder, not a fallback.
