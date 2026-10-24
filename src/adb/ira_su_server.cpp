@@ -28,7 +28,11 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <limits.h>
+#include <string>
 #include <thread>
+
+#include <android-base/properties.h>
 
 #include "ira_names.h"
 #include "ira_privileges.h"
@@ -159,6 +163,17 @@ static uint32_t exit_code(int status) {
     return 127;
 }
 
+/* The same host name the shell service gives every session: the platform mkshrc builds its prompt
+ * out of $HOSTNAME, and su runs in the daemon rather than in the calling session, so nothing here
+ * inherits the caller's environment and it has to be derived from the device like adbd does. */
+static std::string root_host_name() {
+    char buf[HOST_NAME_MAX];
+
+    if (gethostname(buf, sizeof(buf)) != -1 && strcmp(buf, "localhost") != 0)
+        return buf;
+    return android::base::GetProperty("ro.product.device", "android");
+}
+
 [[noreturn]] static void exec_root_shell(const char* cmd, const struct received* r) {
     /* The daemon is root already (ira_main keeps it), so this is a no-op on the phone's normal
      * path; it is here so that a shell started from this server is root by construction and not by
@@ -175,7 +190,12 @@ static uint32_t exit_code(int status) {
     setenv("HOME", "/", 1);
     setenv("USER", "root", 1);
     setenv("LOGNAME", "root", 1);
-    setenv("PS1", "# ", 1);
+    setenv("HOSTNAME", root_host_name().c_str(), 1);
+    setenv("TMPDIR", "/data/local/tmp", 1);
+    /* PS1 is deliberately not set: the session shell sources the platform mkshrc for an
+     * interactive session, and that file builds the prompt from $USER_ID/$HOSTNAME/$PWD. Forcing
+     * a bare "# " here is what made a root session lose the host name and print ":/ #". A shell
+     * that cannot read mkshrc still gets mksh's own "# " default. */
 
     dup2(r->fds[0], STDIN_FILENO);
     dup2(r->fds[1], STDOUT_FILENO);
