@@ -155,7 +155,12 @@ struct NonblockingFdConnection : public Connection {
     void Stop() override final {
         SetRunning(false);
         WakeThread();
-        thread_.join();
+        if (thread_.joinable()) {
+            if (thread_.get_id() == std::this_thread::get_id())
+                thread_.detach();
+            else
+                thread_.join();
+        }
     }
 
     void WakeThread() {

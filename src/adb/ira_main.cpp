@@ -15,6 +15,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <mutex>
 
 #include "adb.h"
 #include "adb_auth.h"
@@ -84,6 +85,12 @@ static void fatal_signal(int sig) {
         (void)adb_write(STDERR_FILENO, buf, (size_t)n);
 }
 
+/* Teardown is serialised against relink.  The transport is destroyed on the adb looper after
+ * handle_offline(), while a relink runs on a pump thread; without this lock a relink could kick
+ * a transport that the looper had just freed, and the second Stop() then joined thread objects
+ * that had already been moved out (libc++ aborts with "thread::join failed: Invalid argument"). */
+static std::mutex g_transport_lock;
+
 atransport* ira_bridge_transport(void) {
     return g_transport;
 }
@@ -96,14 +103,18 @@ atransport* ira_bridge_transport(void) {
 int ira_bridge_relink(void) {
     int sv[2];
 
-    if (g_transport) {
+    {
+        /* Held across the kick: the destroy path runs the transport's disconnect callbacks before
+         * it deletes it, so while this lock is held that pointer cannot go away underneath us. */
+        std::lock_guard<std::mutex> lk(g_transport_lock);
         atransport* old = g_transport;
 
         g_transport = nullptr;
         /* kick_transport() is the public teardown: it stops the connection, whose thread then
          * calls HandleError exactly once (transport_fd.cpp:148). Calling HandleError here as well
          * posts a second handle_offline + transport_destroy and adbd aborts. */
-        kick_transport(old, false);
+        if (old)
+            kick_transport(old, false);
     }
     if (adb_socketpair(sv) != 0)
         return -1;
@@ -214,7 +225,10 @@ int main(int argc, char** argv) {
 
     t->SetConnection(std::move(connection));
     register_transport(t);
-    g_transport = t;
+    {
+        std::lock_guard<std::mutex> lk(g_transport_lock);
+        g_transport = t;
+    }
 
     /* Nothing here starts the connection by hand: the device path does that inside
      * fdevent_register_transport, queued on the looper and run as soon as fdevent_loop() is up.

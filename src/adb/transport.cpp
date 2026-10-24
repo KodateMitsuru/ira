@@ -212,8 +212,24 @@ void BlockingConnectionAdapter::Stop() {
         write_thread = std::move(write_thread_);
     }
 
-    read_thread.join();
-    write_thread.join();
+    /* Teardown can be reached twice on this daemon: the transport is kicked when the wire
+     * changes, and the connection reports its own error at the same moment.  Joining a thread
+     * object another path already moved out of aborts the process ("thread::join failed:
+     * Invalid argument"), so only join what is still ours. */
+    const auto self = std::this_thread::get_id();
+
+    if (read_thread.joinable()) {
+        if (read_thread.get_id() == self)
+            read_thread.detach();
+        else
+            read_thread.join();
+    }
+    if (write_thread.joinable()) {
+        if (write_thread.get_id() == self)
+            write_thread.detach();
+        else
+            write_thread.join();
+    }
 
     LOG(INFO) << "BlockingConnectionAdapter(" << Serial() << "): stopped";
     std::call_once(this->error_flag_, [this]() { transport_->HandleError("requested stop"); });
