@@ -35,6 +35,7 @@
 #include <android-base/properties.h>
 
 #include "ira_names.h"
+#include "ira_platform.h"
 #include "ira_privileges.h"
 #include "ira_session_shell.h"
 #include "ira_su_server.h"
@@ -181,6 +182,14 @@ static std::string root_host_name() {
     ira_child_signals();
     if (ira_privileges_child(true) != 0) {
         fprintf(stderr, "ira-su: cannot enter root identity: %s\n", strerror(errno));
+        _exit(126);
+    }
+    /* The same minijail transition the service backends use, with the root branch: it installs the
+     * group list adbd gives every service (input, log, adb, sdcard_rw, readproc, ...) and leaves
+     * uid/gid and the caller's SELinux label alone. Running su outside a backend is what made its
+     * shell carry gid 0 alone. */
+    if (ira_platform_enter_service_identity(true) != 0) {
+        fprintf(stderr, "ira-su: cannot enter the root service identity: %s\n", strerror(errno));
         _exit(126);
     }
 

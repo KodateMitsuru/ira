@@ -118,14 +118,18 @@ bool adbd_fs_config(const char* path, bool directory, const char* target, uid_t*
     return true;
 }
 
+// AOSP daemon/main.cpp sets these for every adbd service, root or not: a root shell without
+// them cannot read /proc, sdcard or the input devices, so it does not behave like adbd's.
+static const gid_t kShellGroups[] = {1011, 1007, 1004, 3003, 3002, 3001, 1028, 1015,
+                                     3006, 3009, 3011, 1078, 1079, 3012};
+
 int ira_platform_enter_service_identity(bool root) {
     if (!api.ready) { errno = ENOSYS; return -1; }
     // The group list and two-stage capability clearing follow AOSP daemon/main.cpp.
-    static const gid_t groups[] = {1011, 1007, 1004, 3003, 3002, 3001, 1028, 1015,
-                                   3006, 3009, 3011, 1078, 1079, 3012};
+    const gid_t* const groups = kShellGroups;
     minijail* jail = api.create();
     if (!jail) { errno = ENOMEM; return -1; }
-    api.groups(jail, sizeof(groups) / sizeof(gid_t), groups);
+    api.groups(jail, sizeof(kShellGroups) / sizeof(gid_t), groups);
     if (!root) {
         if (api.setcon("u:r:adbd:s0") < 0) { api.destroy(jail); return -1; }
         api.caps(jail, CAP_TO_MASK(CAP_SETUID) | CAP_TO_MASK(CAP_SETGID) | CAP_TO_MASK(CAP_SYS_NICE));
